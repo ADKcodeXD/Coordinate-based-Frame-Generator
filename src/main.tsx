@@ -8,6 +8,12 @@ type DragMode = "draw" | "move" | "resize";
 type Handle = "nw" | "ne" | "sw" | "se";
 type CompositionKey = "none" | "thirds" | "golden" | "perspective" | "parallel" | "horizon";
 type TemplateKey = "portrait" | "product" | "dialogue" | "landscape";
+type BackgroundAsset = {
+  id: number;
+  name: string;
+  type: "image" | "video";
+  url: string;
+};
 
 type Rect = {
   id: number;
@@ -114,6 +120,59 @@ function formatRect(rect: Rect, mode: OutputMode, canvasWidth: number, canvasHei
   return `[L=${round(rect.x, 3)}, T=${round(rect.y, 3)}, W=${round(rect.w, 3)}, H=${round(rect.h, 3)}]`;
 }
 
+function rectFromValues(values: number[], canvasWidth: number, canvasHeight: number, id: number, index: number): Rect {
+  const [left, top, width, height] = values;
+  const isPixel = values.some((value) => Math.abs(value) > 1);
+
+  return normalizeRect({
+    id,
+    x: isPixel ? left / canvasWidth : left,
+    y: isPixel ? top / canvasHeight : top,
+    w: isPixel ? width / canvasWidth : width,
+    h: isPixel ? height / canvasHeight : height,
+    color: palette[index % palette.length],
+  });
+}
+
+function parsePromptRects(prompt: string, canvasWidth: number, canvasHeight: number) {
+  const rects: Rect[] = [];
+  const usedRanges: [number, number][] = [];
+  const keyedChunkPattern = /[\[{(][^\]})]*(?:\b|["'])(?:l|left|t|top|w|width|h|height)(?:\b|["'])\s*[:=][^\]})]*[\]})]|[^\n;；]*(?:\b|["'])(?:l|left|t|top|w|width|h|height)(?:\b|["'])\s*[:=][^\n;；]*/gi;
+  const keyValuePattern = /(?:\b|["'])(l|left|t|top|w|width|h|height)(?:\b|["'])\s*[:=]\s*(-?\d*\.?\d+)/gi;
+  let match: RegExpExecArray | null;
+
+  while ((match = keyedChunkPattern.exec(prompt))) {
+    const values: Partial<Record<"l" | "t" | "w" | "h", number>> = {};
+    let keyMatch: RegExpExecArray | null;
+    keyValuePattern.lastIndex = 0;
+
+    while ((keyMatch = keyValuePattern.exec(match[0]))) {
+      const key = keyMatch[1].toLowerCase();
+      const target = key === "left" ? "l" : key === "top" ? "t" : key === "width" ? "w" : key === "height" ? "h" : key;
+      values[target as "l" | "t" | "w" | "h"] = Number(keyMatch[2]);
+    }
+
+    if (values.l === undefined || values.t === undefined || values.w === undefined || values.h === undefined) {
+      continue;
+    }
+
+    rects.push(
+      rectFromValues([values.l, values.t, values.w, values.h], canvasWidth, canvasHeight, Date.now() + rects.length, rects.length),
+    );
+    usedRanges.push([match.index, match.index + match[0].length]);
+  }
+
+  const arrayPattern = /[\[(]\s*(-?\d*\.?\d+)\s*[,，]\s*(-?\d*\.?\d+)\s*[,，]\s*(-?\d*\.?\d+)\s*[,，]\s*(-?\d*\.?\d+)\s*[\])]/g;
+  while ((match = arrayPattern.exec(prompt))) {
+    const overlapsKeyMatch = usedRanges.some(([start, end]) => match!.index >= start && match!.index <= end);
+    if (overlapsKeyMatch) continue;
+    const values = match.slice(1, 5).map(Number);
+    rects.push(rectFromValues(values, canvasWidth, canvasHeight, Date.now() + rects.length, rects.length));
+  }
+
+  return rects;
+}
+
 function pointerToRatio(event: React.PointerEvent<HTMLElement>, element: HTMLElement) {
   const box = element.getBoundingClientRect();
   return {
@@ -129,15 +188,18 @@ function App() {
   const [canvasHeight, setCanvasHeight] = React.useState(1080);
   const [snap, setSnap] = React.useState(false);
   const [composition, setComposition] = React.useState<CompositionKey>("thirds");
+  const [background, setBackground] = React.useState<BackgroundAsset | null>(null);
+  const [promptText, setPromptText] = React.useState("");
+  const [parseMessage, setParseMessage] = React.useState("");
   const [rects, setRects] = React.useState<Rect[]>([
     { id: 1, x: 0.12, y: 0.14, w: 0.24, h: 0.34, color: palette[0] },
     { id: 2, x: 0.52, y: 0.24, w: 0.25, h: 0.44, color: palette[1] },
   ]);
   const [activeId, setActiveId] = React.useState(2);
   const [copied, setCopied] = React.useState<string | null>(null);
-  const copiedRect = React.useRef<Rect | null>(null);
   const interaction = React.useRef<Interaction | null>(null);
   const canvasRef = React.useRef<HTMLDivElement | null>(null);
+  const fileInputRef = React.useRef<HTMLInputElement | null>(null);
 
   const [rw, rh] = ratios[ratio];
   const activeRect = rects.find((rect) => rect.id === activeId);
@@ -194,21 +256,30 @@ function App() {
         setActiveId(0);
       }
 
-      if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === "c" && activeRect) {
+      if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === "d" && activeRect) {
         event.preventDefault();
-        copiedRect.current = activeRect;
-        void copyText(formatRect(activeRect, mode, canvasWidth, canvasHeight), String(activeRect.id));
-      }
-
-      if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === "v" && copiedRect.current) {
-        event.preventDefault();
-        duplicateRect(copiedRect.current);
+        duplicateRect(activeRect);
       }
     }
 
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
   }, [activeId, activeRect, canvasHeight, canvasWidth, mode, rects]);
+
+  React.useEffect(() => {
+    function onPaste(event: ClipboardEvent) {
+      const file = Array.from(event.clipboardData?.items ?? [])
+        .find((item) => item.kind === "file" && item.type.startsWith("image/"))
+        ?.getAsFile();
+
+      if (!file) return;
+      event.preventDefault();
+      applyBackgroundFile(file);
+    }
+
+    window.addEventListener("paste", onPaste);
+    return () => window.removeEventListener("paste", onPaste);
+  }, []);
 
   function startDraw(event: React.PointerEvent<HTMLDivElement>) {
     if (event.target !== event.currentTarget) return;
@@ -294,6 +365,53 @@ function App() {
   function applyRatio(nextRatio: RatioKey) {
     setRatio(nextRatio);
     setCanvasHeight(syncHeight(canvasWidth, nextRatio));
+  }
+
+  function applyBackgroundFile(file: File) {
+    if (!file.type.startsWith("image/") && !file.type.startsWith("video/")) return;
+
+    const next: BackgroundAsset = {
+      id: Date.now(),
+      name: file.name || (file.type.startsWith("image/") ? "clipboard-image" : "video"),
+      type: file.type.startsWith("video/") ? "video" : "image",
+      url: URL.createObjectURL(file),
+    };
+
+    setBackground((current) => {
+      if (current) URL.revokeObjectURL(current.url);
+      return next;
+    });
+  }
+
+  function onBackgroundUpload(event: React.ChangeEvent<HTMLInputElement>) {
+    const file = event.target.files?.[0];
+    if (file) applyBackgroundFile(file);
+    event.target.value = "";
+  }
+
+  function removeBackground() {
+    setBackground((current) => {
+      if (current) URL.revokeObjectURL(current.url);
+      return null;
+    });
+  }
+
+  function extractRectsFromPrompt(replace = false) {
+    const parsed = parsePromptRects(promptText, canvasWidth, canvasHeight);
+
+    if (!parsed.length) {
+      setParseMessage("没有识别到坐标框");
+      return;
+    }
+
+    const offsetRects = parsed.map((rect, index) => ({
+      ...rect,
+      id: Date.now() + index,
+      color: palette[(replace ? index : rects.length + index) % palette.length],
+    }));
+    setRects((items) => (replace ? offsetRects : [...items, ...offsetRects]));
+    setActiveId(offsetRects[0]?.id ?? 0);
+    setParseMessage(`正则提取成功：${offsetRects.length} 个坐标框`);
   }
 
   function applyTemplate(key: TemplateKey) {
@@ -463,6 +581,26 @@ function App() {
             </div>
           </label>
 
+          <label className="field prompt-field">
+            <span>提示词坐标提取</span>
+            <textarea
+              value={promptText}
+              onChange={(event) => setPromptText(event.target.value)}
+              rows={6}
+              placeholder="粘贴整段提示词，工具会用内置正则提取 L/T/W/H、left/top/width/height 或四数字坐标。"
+            />
+          </label>
+
+          <div className="prompt-actions">
+            <button className="button ghost" onClick={() => extractRectsFromPrompt(false)} disabled={!promptText.trim()}>
+              追加提取
+            </button>
+            <button className="button primary" onClick={() => extractRectsFromPrompt(true)} disabled={!promptText.trim()}>
+              替换画布
+            </button>
+          </div>
+          {parseMessage && <div className="parse-message">{parseMessage}</div>}
+
           {activeRect && (
             <div className="active-readout">
               <span className="muted">当前选中</span>
@@ -474,7 +612,7 @@ function App() {
         <section className="stage-wrap">
           <div className="stage-header">
             <div>
-              <span className="muted">拖动画框定位，拖拽边角缩放。Delete 删除，Esc 取消选中。</span>
+              <span className="muted">拖动画框定位，拖拽边角缩放。Ctrl+D 复制选中框，Ctrl+V 粘贴背景图片，Delete 删除，Esc 取消选中。</span>
               <strong>{canvasWidth} x {canvasHeight}</strong>
             </div>
             <span className="coordinate-tip">L / T / W / H</span>
@@ -490,6 +628,15 @@ function App() {
               onPointerUp={endInteraction}
               onPointerCancel={endInteraction}
             >
+              {background && (
+                <div className="background-layer">
+                  {background.type === "image" ? (
+                    <img src={background.url} alt={background.name} />
+                  ) : (
+                    <video src={background.url} muted loop autoPlay playsInline />
+                  )}
+                </div>
+              )}
               <div className="axis x-axis">x</div>
               <div className="axis y-axis">y</div>
               <div className="composition-layer" aria-hidden="true">
@@ -523,12 +670,23 @@ function App() {
               ))}
             </div>
           </div>
+
+          <div className="background-toolbar">
+            <input ref={fileInputRef} type="file" accept="image/*,video/*" onChange={onBackgroundUpload} />
+            <button className="button primary" onClick={() => fileInputRef.current?.click()}>
+              上传背景
+            </button>
+            <button className="button ghost" onClick={removeBackground} disabled={!background}>
+              清除背景
+            </button>
+            <span className="muted">{background ? background.name : "也可以直接 Ctrl+V 粘贴剪贴板图片"}</span>
+          </div>
         </section>
 
         <aside className="panel output-panel">
           <div className="panel-title">
             <span>坐标输出</span>
-            <span className="pill">{mode === "percent" ? "比例" : "像素"}</span>
+            <span className="pill">{rects.length} 个框</span>
           </div>
 
           <div className="output-list">

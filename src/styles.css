@@ -169,6 +169,10 @@ h1 {
   outline: none;
 }
 
+.upload-field input {
+  padding: 8px;
+}
+
 .field textarea {
   resize: vertical;
   line-height: 1.7;
@@ -270,6 +274,7 @@ h1 {
 .stage-header div {
   display: grid;
   gap: 4px;
+  min-width: 0;
 }
 
 .muted {
@@ -331,7 +336,7 @@ h1 {
 
 .axis {
   position: absolute;
-  z-index: 1;
+  z-index: 3;
   color: #64748b;
   font-size: 12px;
   font-weight: 900;
@@ -349,7 +354,7 @@ h1 {
 
 .rect {
   position: absolute;
-  z-index: 2;
+  z-index: 4;
   border: 2px solid;
   border-radius: 2px;
   cursor: move;
@@ -412,8 +417,48 @@ h1 {
 .composition-layer {
   position: absolute;
   inset: 0;
-  z-index: 1;
+  z-index: 2;
   pointer-events: none;
+}
+
+.background-layer {
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  background: #9ca3af;
+  pointer-events: none;
+}
+
+.background-layer img,
+.background-layer video {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  opacity: 0.5;
+  filter: brightness(0.72) saturate(0.9);
+  display: block;
+}
+
+.background-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-top: 12px;
+  border: 1px solid rgba(148, 163, 184, 0.35);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.88);
+  padding: 10px;
+  box-shadow: 0 18px 60px rgba(15, 23, 42, 0.08);
+}
+
+.background-toolbar input {
+  display: none;
+}
+
+.background-toolbar .muted {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .guide {
@@ -499,6 +544,145 @@ h1 {
   overflow: auto;
 }
 
+.subhead,
+.prompt-actions {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.subhead {
+  margin: 0 0 10px;
+  color: #475569;
+  font-size: 13px;
+  font-weight: 800;
+}
+
+.text-button {
+  border: 0;
+  background: transparent;
+  color: #0f766e;
+  padding: 0;
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.text-button:disabled {
+  cursor: not-allowed;
+  color: #94a3b8;
+}
+
+.history-block {
+  margin-bottom: 16px;
+}
+
+.asset-list {
+  display: grid;
+  gap: 8px;
+}
+
+.asset-item {
+  display: grid;
+  grid-template-columns: 56px minmax(0, 1fr) 34px;
+  align-items: center;
+  gap: 8px;
+  border: 1px solid #d6dce6;
+  border-radius: 8px;
+  background: #fff;
+  padding: 8px;
+}
+
+.asset-active {
+  border-color: #0f766e;
+  box-shadow: 0 0 0 3px rgba(15, 118, 110, 0.12);
+}
+
+.asset-preview,
+.asset-name {
+  border: 0;
+  background: transparent;
+  padding: 0;
+  text-align: left;
+}
+
+.asset-preview {
+  width: 56px;
+  height: 42px;
+  overflow: hidden;
+  border-radius: 6px;
+  background: #0f172a;
+}
+
+.asset-preview img,
+.asset-preview video {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+
+.asset-name {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+}
+
+.asset-name strong,
+.asset-name span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.asset-name strong {
+  color: #111827;
+  font-size: 13px;
+}
+
+.asset-name span {
+  color: #64748b;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.prompt-field {
+  margin-bottom: 10px;
+}
+
+.regex-field {
+  margin-bottom: 10px;
+}
+
+.regex-field small {
+  color: #64748b;
+  line-height: 1.5;
+  font-weight: 700;
+}
+
+.prompt-actions {
+  margin-bottom: 8px;
+}
+
+.prompt-actions .button {
+  flex: 1;
+}
+
+.parse-message {
+  margin: 0 0 14px;
+  border: 1px solid #bbf7d0;
+  border-radius: 8px;
+  background: #f0fdf4;
+  color: #166534;
+  padding: 9px 10px;
+  font-size: 13px;
+  font-weight: 800;
+}
+
+.slim-title {
+  margin-top: 8px;
+}
+
 .output-list {
   display: grid;
   gap: 10px;
@@ -563,6 +747,11 @@ code {
   background: #f8fafc;
   text-align: center;
   font-weight: 700;
+}
+
+.empty.compact {
+  padding: 12px;
+  font-size: 12px;
 }
 
 @media (max-width: 1180px) {
