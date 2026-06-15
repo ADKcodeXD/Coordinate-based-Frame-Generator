@@ -70,6 +70,7 @@ h1 {
 
 .button,
 .segmented button,
+.template-button,
 .icon-button,
 .swatch {
   border: 1px solid #d6dce6;
@@ -87,6 +88,7 @@ h1 {
 
 .button:hover,
 .segmented button:hover,
+.template-button:hover,
 .icon-button:hover {
   border-color: #94a3b8;
   box-shadow: 0 8px 20px rgba(15, 23, 42, 0.08);
@@ -191,6 +193,10 @@ h1 {
   grid-template-columns: repeat(3, minmax(0, 1fr));
 }
 
+.composition-grid {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
 .segmented button {
   min-height: 36px;
   border-radius: 6px;
@@ -217,6 +223,20 @@ h1 {
   width: 18px;
   height: 18px;
   accent-color: #0f766e;
+}
+
+.template-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.template-button {
+  min-height: 36px;
+  border-radius: 7px;
+  padding: 0 10px;
+  font-size: 13px;
+  font-weight: 800;
 }
 
 .active-readout {
@@ -336,7 +356,9 @@ h1 {
 }
 
 .rect.selected {
-  box-shadow: 0 0 0 3px rgba(15, 118, 110, 0.18), 0 16px 34px rgba(15, 23, 42, 0.15);
+  outline: 2px solid #facc15;
+  outline-offset: 3px;
+  box-shadow: 0 0 0 6px rgba(15, 118, 110, 0.2), 0 16px 34px rgba(15, 23, 42, 0.15);
 }
 
 .rect-label {
@@ -387,6 +409,91 @@ h1 {
   cursor: nwse-resize;
 }
 
+.composition-layer {
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  pointer-events: none;
+}
+
+.guide {
+  position: absolute;
+  pointer-events: none;
+}
+
+.guide.line {
+  background: rgba(37, 99, 235, 0.52);
+}
+
+.guide.golden {
+  background: rgba(217, 119, 6, 0.68);
+}
+
+.guide.vertical {
+  top: 0;
+  bottom: 0;
+  width: 1px;
+}
+
+.guide.horizontal {
+  right: 0;
+  left: 0;
+  height: 1px;
+}
+
+.guide.perspective {
+  top: 50%;
+  left: 50%;
+  width: 72%;
+  height: 1px;
+  background: rgba(190, 18, 60, 0.56);
+  transform-origin: 0 0;
+}
+
+.guide.from-top-left {
+  transform: rotate(29deg);
+}
+
+.guide.from-top-right {
+  transform: rotate(151deg);
+}
+
+.guide.from-bottom-left {
+  transform: rotate(-29deg);
+}
+
+.guide.from-bottom-right {
+  transform: rotate(-151deg);
+}
+
+.guide.focus-dot {
+  top: 50%;
+  left: 50%;
+  width: 10px;
+  height: 10px;
+  border: 2px solid rgba(190, 18, 60, 0.72);
+  border-radius: 50%;
+  transform: translate(-50%, -50%);
+}
+
+.guide.parallel {
+  top: -15%;
+  width: 1px;
+  height: 130%;
+  background: rgba(15, 118, 110, 0.6);
+  transform: rotate(18deg);
+  transform-origin: center;
+}
+
+.guide.horizon-main {
+  height: 2px;
+  background: rgba(109, 40, 217, 0.72);
+}
+
+.guide.horizon-soft {
+  background: rgba(109, 40, 217, 0.36);
+}
+
 .output-panel {
   max-height: calc(100vh - 102px);
   overflow: auto;
@@ -400,7 +507,7 @@ h1 {
 
 .output-item {
   display: grid;
-  grid-template-columns: 34px minmax(0, 1fr) 34px 34px;
+  grid-template-columns: 34px minmax(0, 1fr) 48px 34px;
   align-items: center;
   gap: 8px;
   border: 1px solid #d6dce6;
@@ -418,11 +525,16 @@ h1 {
 .icon-button {
   display: grid;
   place-items: center;
-  width: 34px;
+  min-width: 34px;
   height: 34px;
   border-radius: 7px;
   padding: 0;
   font-weight: 900;
+}
+
+.icon-button {
+  padding: 0 8px;
+  font-size: 12px;
 }
 
 .swatch {

@@ -6,6 +6,8 @@ type RatioKey = "21:9" | "16:9" | "9:16" | "4:3" | "3:4" | "1:1";
 type OutputMode = "percent" | "pixel";
 type DragMode = "draw" | "move" | "resize";
 type Handle = "nw" | "ne" | "sw" | "se";
+type CompositionKey = "none" | "thirds" | "golden" | "perspective" | "parallel" | "horizon";
+type TemplateKey = "portrait" | "product" | "dialogue" | "landscape";
 
 type Rect = {
   id: number;
@@ -36,6 +38,49 @@ const ratios: Record<RatioKey, [number, number]> = {
 
 const palette = ["#0f766e", "#6d28d9", "#be123c", "#2563eb", "#d97706", "#16a34a"];
 const minSize = 0.015;
+
+const compositionOptions: { key: CompositionKey; label: string }[] = [
+  { key: "none", label: "无" },
+  { key: "thirds", label: "三分线" },
+  { key: "golden", label: "黄金比例" },
+  { key: "perspective", label: "透视线" },
+  { key: "parallel", label: "平行线" },
+  { key: "horizon", label: "地平线" },
+];
+
+const templates: Record<TemplateKey, { label: string; rects: Omit<Rect, "id" | "color">[] }> = {
+  portrait: {
+    label: "人物居中",
+    rects: [
+      { x: 0.36, y: 0.16, w: 0.28, h: 0.62 },
+      { x: 0.12, y: 0.18, w: 0.2, h: 0.36 },
+      { x: 0.68, y: 0.18, w: 0.2, h: 0.36 },
+    ],
+  },
+  product: {
+    label: "产品展示",
+    rects: [
+      { x: 0.1, y: 0.18, w: 0.46, h: 0.58 },
+      { x: 0.62, y: 0.24, w: 0.28, h: 0.18 },
+      { x: 0.62, y: 0.48, w: 0.24, h: 0.12 },
+    ],
+  },
+  dialogue: {
+    label: "双人对话",
+    rects: [
+      { x: 0.1, y: 0.18, w: 0.32, h: 0.56 },
+      { x: 0.58, y: 0.18, w: 0.32, h: 0.56 },
+    ],
+  },
+  landscape: {
+    label: "风景层次",
+    rects: [
+      { x: 0.05, y: 0.12, w: 0.9, h: 0.28 },
+      { x: 0.08, y: 0.48, w: 0.34, h: 0.34 },
+      { x: 0.54, y: 0.52, w: 0.34, h: 0.28 },
+    ],
+  },
+};
 
 function clamp(value: number, min = 0, max = 1) {
   return Math.min(max, Math.max(min, value));
@@ -83,18 +128,21 @@ function App() {
   const [canvasWidth, setCanvasWidth] = React.useState(1920);
   const [canvasHeight, setCanvasHeight] = React.useState(1080);
   const [snap, setSnap] = React.useState(false);
+  const [composition, setComposition] = React.useState<CompositionKey>("thirds");
   const [rects, setRects] = React.useState<Rect[]>([
     { id: 1, x: 0.12, y: 0.14, w: 0.24, h: 0.34, color: palette[0] },
     { id: 2, x: 0.52, y: 0.24, w: 0.25, h: 0.44, color: palette[1] },
   ]);
   const [activeId, setActiveId] = React.useState(2);
   const [copied, setCopied] = React.useState<string | null>(null);
+  const copiedRect = React.useRef<Rect | null>(null);
   const interaction = React.useRef<Interaction | null>(null);
   const canvasRef = React.useRef<HTMLDivElement | null>(null);
 
   const [rw, rh] = ratios[ratio];
-  const activeRect = rects.find((rect) => rect.id === activeId) ?? rects[0];
+  const activeRect = rects.find((rect) => rect.id === activeId);
   const allOutput = rects.map((rect) => formatRect(rect, mode, canvasWidth, canvasHeight)).join("\n");
+  const canvasMaxWidth = `min(100%, 940px, calc((100vh - 190px) * ${rw / rh}))`;
 
   function snapValue(value: number) {
     return snap ? Math.round(value * 100) / 100 : value;
@@ -103,6 +151,64 @@ function App() {
   function updateRect(id: number, next: Rect) {
     setRects((items) => items.map((item) => (item.id === id ? normalizeRect(next) : item)));
   }
+
+  async function copyText(text: string, key: string) {
+    await navigator.clipboard.writeText(text);
+    setCopied(key);
+    window.setTimeout(() => setCopied(null), 1200);
+  }
+
+  function duplicateRect(rect: Rect) {
+    const next = normalizeRect({
+      ...rect,
+      id: Date.now(),
+      x: rect.x + 0.03 > 1 - rect.w ? Math.max(0, rect.x - 0.03) : rect.x + 0.03,
+      y: rect.y + 0.03 > 1 - rect.h ? Math.max(0, rect.y - 0.03) : rect.y + 0.03,
+      color: palette[rects.length % palette.length],
+    });
+    setRects((items) => [...items, next]);
+    setActiveId(next.id);
+  }
+
+  function removeRect(id: number) {
+    setRects((items) => {
+      const next = items.filter((item) => item.id !== id);
+      if (activeId === id) setActiveId(next.at(-1)?.id ?? 0);
+      return next;
+    });
+  }
+
+  React.useEffect(() => {
+    function onKeyDown(event: KeyboardEvent) {
+      const target = event.target as HTMLElement | null;
+      const isTyping =
+        target?.tagName === "INPUT" || target?.tagName === "TEXTAREA" || target?.isContentEditable === true;
+      if (isTyping) return;
+
+      if ((event.key === "Delete" || event.key === "Backspace") && activeId) {
+        event.preventDefault();
+        removeRect(activeId);
+      }
+
+      if (event.key === "Escape") {
+        setActiveId(0);
+      }
+
+      if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === "c" && activeRect) {
+        event.preventDefault();
+        copiedRect.current = activeRect;
+        void copyText(formatRect(activeRect, mode, canvasWidth, canvasHeight), String(activeRect.id));
+      }
+
+      if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === "v" && copiedRect.current) {
+        event.preventDefault();
+        duplicateRect(copiedRect.current);
+      }
+    }
+
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [activeId, activeRect, canvasHeight, canvasWidth, mode, rects]);
 
   function startDraw(event: React.PointerEvent<HTMLDivElement>) {
     if (event.target !== event.currentTarget) return;
@@ -175,17 +281,6 @@ function App() {
     interaction.current = null;
   }
 
-  async function copyText(text: string, key: string) {
-    await navigator.clipboard.writeText(text);
-    setCopied(key);
-    window.setTimeout(() => setCopied(null), 1200);
-  }
-
-  function removeRect(id: number) {
-    setRects((items) => items.filter((item) => item.id !== id));
-    if (activeId === id) setActiveId(rects.find((rect) => rect.id !== id)?.id ?? 0);
-  }
-
   function clearRects() {
     setRects([]);
     setActiveId(0);
@@ -199,6 +294,76 @@ function App() {
   function applyRatio(nextRatio: RatioKey) {
     setRatio(nextRatio);
     setCanvasHeight(syncHeight(canvasWidth, nextRatio));
+  }
+
+  function applyTemplate(key: TemplateKey) {
+    const nextRects = templates[key].rects.map((rect, index) => ({
+      ...rect,
+      id: Date.now() + index,
+      color: palette[index % palette.length],
+    }));
+    setRects(nextRects);
+    setActiveId(nextRects[0]?.id ?? 0);
+  }
+
+  function renderCompositionGuides() {
+    if (composition === "none") return null;
+
+    if (composition === "thirds") {
+      return (
+        <>
+          {[33.333, 66.667].map((pos) => (
+            <React.Fragment key={pos}>
+              <div className="guide line vertical" style={{ left: `${pos}%` }} />
+              <div className="guide line horizontal" style={{ top: `${pos}%` }} />
+            </React.Fragment>
+          ))}
+        </>
+      );
+    }
+
+    if (composition === "golden") {
+      return (
+        <>
+          {[38.2, 61.8].map((pos) => (
+            <React.Fragment key={pos}>
+              <div className="guide line golden vertical" style={{ left: `${pos}%` }} />
+              <div className="guide line golden horizontal" style={{ top: `${pos}%` }} />
+            </React.Fragment>
+          ))}
+        </>
+      );
+    }
+
+    if (composition === "perspective") {
+      return (
+        <>
+          <div className="guide perspective from-top-left" />
+          <div className="guide perspective from-top-right" />
+          <div className="guide perspective from-bottom-left" />
+          <div className="guide perspective from-bottom-right" />
+          <div className="guide focus-dot" />
+        </>
+      );
+    }
+
+    if (composition === "parallel") {
+      return (
+        <>
+          {[-34, -17, 0, 17, 34].map((offset) => (
+            <div key={offset} className="guide parallel" style={{ left: `${50 + offset}%` }} />
+          ))}
+        </>
+      );
+    }
+
+    return (
+      <>
+        <div className="guide line horizon-main horizontal" style={{ top: "50%" }} />
+        <div className="guide line horizon-soft horizontal" style={{ top: "42%" }} />
+        <div className="guide line horizon-soft horizontal" style={{ top: "58%" }} />
+      </>
+    );
   }
 
   return (
@@ -276,6 +441,28 @@ function App() {
             <span>吸附到 1% 网格</span>
           </label>
 
+          <label className="field">
+            <span>构图辅助线</span>
+            <div className="segmented composition-grid">
+              {compositionOptions.map((item) => (
+                <button key={item.key} className={composition === item.key ? "active" : ""} onClick={() => setComposition(item.key)}>
+                  {item.label}
+                </button>
+              ))}
+            </div>
+          </label>
+
+          <label className="field">
+            <span>模板</span>
+            <div className="template-grid">
+              {(Object.keys(templates) as TemplateKey[]).map((key) => (
+                <button key={key} className="template-button" onClick={() => applyTemplate(key)}>
+                  {templates[key].label}
+                </button>
+              ))}
+            </div>
+          </label>
+
           {activeRect && (
             <div className="active-readout">
               <span className="muted">当前选中</span>
@@ -287,7 +474,7 @@ function App() {
         <section className="stage-wrap">
           <div className="stage-header">
             <div>
-              <span className="muted">拖动画框定位，拖拽边角缩放</span>
+              <span className="muted">拖动画框定位，拖拽边角缩放。Delete 删除，Esc 取消选中。</span>
               <strong>{canvasWidth} x {canvasHeight}</strong>
             </div>
             <span className="coordinate-tip">L / T / W / H</span>
@@ -297,7 +484,7 @@ function App() {
             <div
               ref={canvasRef}
               className="canvas"
-              style={{ aspectRatio: `${rw} / ${rh}` }}
+              style={{ aspectRatio: `${rw} / ${rh}`, width: canvasMaxWidth }}
               onPointerDown={startDraw}
               onPointerMove={onPointerMove}
               onPointerUp={endInteraction}
@@ -305,6 +492,9 @@ function App() {
             >
               <div className="axis x-axis">x</div>
               <div className="axis y-axis">y</div>
+              <div className="composition-layer" aria-hidden="true">
+                {renderCompositionGuides()}
+              </div>
               {rects.map((rect, index) => (
                 <div
                   key={rect.id}
@@ -352,9 +542,9 @@ function App() {
                   </button>
                   <code>{text}</code>
                   <button className="icon-button" onClick={() => copyText(text, String(rect.id))}>
-                    {copied === String(rect.id) ? "✓" : "⧉"}
+                    {copied === String(rect.id) ? "✓" : "复制"}
                   </button>
-                  <button className="icon-button danger" onClick={() => removeRect(rect.id)}>×</button>
+                  <button className="icon-button danger" onClick={() => removeRect(rect.id)}>删</button>
                 </article>
               );
             })}
